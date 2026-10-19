@@ -11,9 +11,22 @@ Deployment notes for **Red Hat OpenShift Lightspeed 1.0** on the `luke` OpenShif
 | LLM | llama.cpp (`ghcr.io/ggml-org/llama.cpp`, build 11669), `Qwen3.8-27B UD-IQ4_XS`, 262K ctx |
 | LLM endpoint | `http://192.168.40.100:8022/v1` (LAN host) |
 | Provider type | `openai` (OpenAI-compatible API) |
-| Status | ✅ RAG/docs answers and MCP cluster-interaction tool calls verified end-to-end |
+| Status | ✅ RAG/docs answers and MCP cluster-interaction tool calls verified end-to-end (2026-10-19); console in use |
 
 > ⚠️ The LLM URL and hostnames below are from the reference environment; substitute your own.
+
+## Operational status
+
+Running in production use as of **2026-10-19**. Verified paths: console chat, RAG/docs answers, MCP cluster interaction (`resources_list`, `pods_list`, …), streaming queries.
+
+Known limitations of this deployment:
+
+| Limitation | Impact | Mitigation |
+|---|---|---|
+| Intermittent llama.cpp **500 on tool-call arguments** ([issue #7](docs/issues.md#7-danger-alert-llm-backend-an-error-occurred-during-llm-invocation)) | “LLM invocation” danger alert; the chat keeps failing because the bad call is replayed | **Start a new conversation**; optionally recreate the server with `TEMP=0.2` to reduce malformed tool-call JSON |
+| Tool-result safety inspection **disabled** ([issue #2](docs/issues.md#2-tool-result-safety-inspection-fails-closed--tool-result-failed-the-safety-inspection)) | No prompt-injection scanning of tool output | Acceptable for trusted sources (Red Hat docs via OKP, local MCP server); re-enable with a model that emits strict JSON |
+| Thinking disabled server-side ([issue #1](docs/issues.md#1-tool-calling-queries-fail-with-http-400-itemcontent-is-empty)) | No `reasoning_content`; instruct sampler | Restore with `ENABLE_THINKING=true` once llama.cpp #29412 lands |
+| Model reliability | One observed hallucination (invented node names/count) | Verify cluster-mutating answers; Qwen3.8-27B is good, not flawless at tool use |
 
 ## Architecture
 

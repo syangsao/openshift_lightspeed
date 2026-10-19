@@ -2,6 +2,16 @@
 
 Every problem encountered bringing OpenShift Lightspeed 1.0 up against a local llama.cpp server, with root causes and status. Ordered by impact.
 
+| # | Issue | Status |
+|---|---|---|
+| 1 | [Tool calls 400 — empty reasoning item](#1-tool-calling-queries-fail-with-http-400-itemcontent-is-empty) | Worked around (thinking off); upstream #29159 / PR #29412 open |
+| 2 | [Tool-result inspection fails closed](#2-tool-result-safety-inspection-fails-closed--tool-result-failed-the-safety-inspection) | Disabled (documented trade-off) |
+| 3 | [First boot: Solr race](#3-first-boot-app-server-crash-loops-while-solr-starts) | Self-resolving |
+| 4 | [Operator leader-election churn](#4-operator-restarts-with-leader-election-lost-during-the-initial-image-pull) | Self-healing |
+| 5 | [`oc whoami -t` with cert kubeconfig](#5-oc-whoami--t-fails-against-a-client-certificate-kubeconfig) | Documented workaround |
+| 6 | [Doc gotchas](#6-notes-from-the-documentation-that-are-easy-to-miss) | Reference |
+| 7 | [Intermittent 500 on empty tool-call args](#7-danger-alert-llm-backend-an-error-occurred-during-llm-invocation) | Intermittent; new chat recovers; upstream #25510 open |
+
 ---
 
 ## 1. Tool-calling queries fail with HTTP 400 `item['content'] is empty`
@@ -239,7 +249,7 @@ Upstream:
 3. Reduce malformed-JSON probability with a lower sampler temperature on the llama.cpp compose (the INSTRUCT row honours `TEMP`, default `0.7` — e.g. `TEMP=0.2`); this trades some response variety for tool-call stability.
 4. Permanent fix requires llama.cpp to treat empty/unparseable arguments as `{}` or return a 4xx (#25510) — not yet merged as of 2026-10.
 
-**Status:** Intermittent; understood. Not an OLS/RAG/safety failure — the LLM backend returned 500.
+**Status:** Intermittent; understood. Not an OLS/RAG/safety failure — the LLM backend returned 500. Confirmed in production use (2026-10-19): after starting a new conversation the assistant works normally; six follow-up reproduction queries succeeded, and the captured traffic showed correctly formed tool calls.
 
 ---
 

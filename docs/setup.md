@@ -54,7 +54,7 @@ openshift-mcp-server-...         1/1   Running   # cluster interaction tools
 | Field | Value used | Notes |
 |---|---|---|
 | `llm.providers[].type` | `openai` | Right fit for llama.cpp (OpenAI-compatible). Allowed values in the 1.0 CRD: `azure_openai`, `bam`, `openai`, `watsonx`, `rhoai_vllm`, `rhelai_vllm` |
-| `llm.providers[].url` | `http://192.168.40.100:8022/v1` | Must include the `/v1` suffix (pattern `^https?://.*$`; docs require ending in `v1`) |
+| `llm.providers[].url` | `http://192.168.40.100:8023/v1` | Must include the `/v1` suffix. `:8023` is the Responses-API shim in front of llama.cpp `:8022` — required for parallel tool calls (issue #7); see [../manifests/llama-cpp-responses-shim.md](../manifests/llama-cpp-responses-shim.md) |
 | `models[].name` | `qwen3.8-27b` | Must match what the server reports in `/v1/models` |
 | `models[].contextWindowSize` | `262144` | Server is launched with `-c 262144`; CRD default is 128k |
 | `ols.defaultProvider` / `defaultModel` | matching names | CRD requires both to match a configured provider/model |

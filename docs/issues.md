@@ -232,24 +232,43 @@ ERROR: Parsed LLM error (streaming): status_code=500, response_text=[LLM Backend
 
 llama.cpp log shows three identical `srv operator(): got exception: {... "Failed to parse tool call arguments as JSON" ...}` (OLS retries).
 
-**Root cause**
+**Root cause (confirmed by packet capture)**
 
-llama.cpp's Responses API strictly `json::parse()`es tool-call `arguments`. When the model emits a tool call with empty or truncated argument JSON (e.g. nothing, `{`, or a half-written string), the server aborts the request with HTTP 500 instead of treating it as a recoverable/client error. OLS surfaces the 500 as the generic “LLM invocation” alert.
+llama.cpp's `/v1/responses` streaming emits **no `output_index` field** on `response.output_item.added`, `response.output_item.done`, or `response.function_call_arguments.delta`. The OpenAI Python SDK (used by OLS via `langchain-openai`) correlates streamed tool-call deltas by output index, so when the model emits **parallel tool calls in one response**, all argument deltas are appended to the first item and the other items end up with empty arguments.
 
-Because the bad tool call is appended to conversation history and replayed, a conversation that hits this can fail on every subsequent turn (“wedged”) until a new conversation is started.
+Capture of a failing turn (query: *“What are the nodes and their conditions?”*; model emitted 3 parallel `resources_get` calls — one per node):
 
-Upstream:
-- **ggml-org/llama.cpp#25510** — *“Malformed client-supplied tool call arguments return 500 instead of 4xx”* (open; explicitly describes the wedged-conversation behavior)
-- **ggml-org/llama.cpp#22072** — *“tool calling sometimes emits malformed/incomplete JSON arguments”* (closed stale; has multiple reporters, including truncation-mid-string failures)
+```
+stream (correct):  output_item.added id=fc_Q4…  call_id=call_Q4…  args=''
+                   …deltas id=fc_Q4…  ('{', '"apiVersion":"', '"v1"', … )
+                   output_item.added id=fc_tT…  call_id=call_tT…  args=''
+                   output_item.added id=fc_oP…  call_id=call_oP…  args=''
+                   output_item.done  → 3 items, each with its correct args
+
+next request (corrupt replay):
+  resources_get args='{"apiVersion":"v1","kind":"Node","name":"arbiter.syangsao.net"}
+                     {"apiVersion":"v1","kind":"Node","name":"control01.syangsao.net"}
+                     {"apiVersion":"v1","kind":"Node","name":"control02.syangsao.net"}'
+  resources_get args=''
+  resources_get args=''
+```
+
+llama.cpp then strictly `json::parse()`es the replayed `arguments`, fails (`unexpected '{'; expected end of input` / `attempting to parse an empty input`) and returns HTTP 500 — surfaced by OLS as the generic watchdog alert. The corrupt call stays in the conversation history, so the chat fails on every subsequent turn until a new conversation is started.
+
+Upstream references:
+- **ggml-org/llama.cpp#20607** — *“/v1/responses streaming SSE missing fields required by Vercel AI SDK (output_index, id on function_call items, created_at/model)”* — closed **stale**, not fixed. Current `master` still contains no `output_index` (verified 2026-10).
+- **ggml-org/llama.cpp#25510** — malformed replayed tool-call arguments return 500 instead of 4xx (open; describes the wedged-conversation behavior).
+- **ggml-org/llama.cpp#18591** — streaming tool calling with multiple calls broken.
+- `MidnightOnMars/llama-cpp-responses-proxy` — MIT compatibility shim that injects the missing fields (and normalizes replayed history). The only working fix available while upstream is unfixed.
 
 **Mitigations**
 
-1. **Start a new conversation** in the Lightspeed UI — the wedged one replays the malformed call.
-2. Retry — the failure is a sampling artifact (observed intermittently: identical requests succeeded 6/6 in a later capture run).
-3. Reduce malformed-JSON probability with a lower sampler temperature on the llama.cpp compose (the INSTRUCT row honours `TEMP`, default `0.7` — e.g. `TEMP=0.2`); this trades some response variety for tool-call stability.
-4. Permanent fix requires llama.cpp to treat empty/unparseable arguments as `{}` or return a 4xx (#25510) — not yet merged as of 2026-10.
+1. **Deployed: Responses-API shim** (`ols-shim`, `:8023` → llama.cpp `:8022`) injects `output_index` so the SDK keeps parallel calls separate. `spec.llm.providers[].url` points at the shim. See [../manifests/llama-cpp-responses-shim.md](../manifests/llama-cpp-responses-shim.md). Verified end-to-end: three consecutive runs of the deterministic failing query all answered, and the capture showed per-call correct arguments in the replayed history.
+2. **Start a new conversation** for chats wedged *before* the shim was in place — their history still contains the corrupt call.
+3. Lower `TEMP` is **not** a fix (the merge happens with any parallel tool call).
+4. Permanent fix must land in llama.cpp (#20607 / #25510); current `master` still lacks `output_index`.
 
-**Status:** Intermittent; understood. Not an OLS/RAG/safety failure — the LLM backend returned 500. Confirmed in production use (2026-10-19): after starting a new conversation the assistant works normally; six follow-up reproduction queries succeeded, and the captured traffic showed correctly formed tool calls.
+**Status:** **Fixed by the shim** for new conversations (2026-10-19). Upstream remains broken; the shim is required until llama.cpp implements the fields.
 
 ---
 

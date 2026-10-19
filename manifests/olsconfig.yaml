@@ -8,7 +8,11 @@ spec:
       - name: local_llamacpp
         # llama.cpp serves an OpenAI-compatible API
         type: openai
-        url: http://192.168.40.100:8022/v1
+        # Responses-API compatibility shim (ols-shim, port 8023) -> llama.cpp 8022.
+        # Adds output_index to streamed tool-call events; without it the OpenAI SDK
+        # merges parallel tool calls and the replay corrupts the conversation.
+        # See docs/issues.md #7 and manifests/llama-cpp-responses-shim.md.
+        url: http://192.168.40.100:8023/v1
         credentialsSecretRef:
           name: credentials
         models:

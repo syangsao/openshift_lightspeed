@@ -9,7 +9,8 @@ Deployment notes for **Red Hat OpenShift Lightspeed 1.0** on the `luke` OpenShif
 | API | `https://api.luke.syangsao.net:6443` |
 | Lightspeed | 1.0, operator installed via OLM (`openshift-lightspeed` namespace) |
 | LLM | llama.cpp (`ghcr.io/ggml-org/llama.cpp`, build 11669), `Qwen3.8-27B UD-IQ4_XS`, 262K ctx |
-| LLM endpoint | `http://192.168.40.100:8022/v1` (LAN host) |
+| LLM transport | `ols-shim` (Responses-API compatibility proxy) `:8023` → llama.cpp `:8022` — see [manifests/llama-cpp-responses-shim.md](manifests/llama-cpp-responses-shim.md) |
+| LLM endpoint | `http://192.168.40.100:8023/v1` (shim; direct llama.cpp is `:8022`) |
 | Provider type | `openai` (OpenAI-compatible API) |
 | Status | ✅ RAG/docs answers and MCP cluster-interaction tool calls verified end-to-end (2026-10-19); console in use |
 
@@ -23,7 +24,7 @@ Known limitations of this deployment:
 
 | Limitation | Impact | Mitigation |
 |---|---|---|
-| Intermittent llama.cpp **500 on tool-call arguments** ([issue #7](docs/issues.md#7-danger-alert-llm-backend-an-error-occurred-during-llm-invocation)) | “LLM invocation” danger alert; the chat keeps failing because the bad call is replayed | **Start a new conversation**; optionally recreate the server with `TEMP=0.2` to reduce malformed tool-call JSON |
+| llama.cpp `500` on **parallel tool calls** ([issue #7](docs/issues.md#7-danger-alert-llm-backend-an-error-occurred-during-llm-invocation)) | “LLM invocation” danger alert; the corrupt call is replayed and wedges the chat | **Fixed** with the `ols-shim` Responses-API proxy (`output_index` injection). Chats wedged before the fix still need a new conversation. Upstream #20607/#25510 remain open. |
 | Tool-result safety inspection **disabled** ([issue #2](docs/issues.md#2-tool-result-safety-inspection-fails-closed--tool-result-failed-the-safety-inspection)) | No prompt-injection scanning of tool output | Acceptable for trusted sources (Red Hat docs via OKP, local MCP server); re-enable with a model that emits strict JSON |
 | Thinking disabled server-side ([issue #1](docs/issues.md#1-tool-calling-queries-fail-with-http-400-itemcontent-is-empty)) | No `reasoning_content`; instruct sampler | Restore with `ENABLE_THINKING=true` once llama.cpp #29412 lands |
 | Model reliability | One observed hallucination (invented node names/count) | Verify cluster-mutating answers; Qwen3.8-27B is good, not flawless at tool use |
@@ -37,7 +38,8 @@ flowchart LR
     AS -->|RAG| SOLR[RHOKP / Solr<br/>portal-rag core]
     AS -->|MCP tools| MCP[openshift-mcp-server]
     MCP --> K8S[Cluster API]
-    AS -->|"OpenAI-compatible<br/>/v1/responses"| LLM[llama.cpp<br/>192.168.40.100:8022]
+    AS -->|"OpenAI-compatible<br/>/v1/responses"| SHIM[ols-shim :8023]
+    SHIM -->|patched SSE| LLM[llama.cpp<br/>192.168.40.100:8022]
     AS --> PG[(PostgreSQL<br/>conversation cache)]
     AS --> OTEL[OTel collector]
 ```
@@ -75,6 +77,8 @@ manifests/
   olsconfig.yaml               # OLSConfig CR (provider, model, guardrails)
   secret.yaml                  # apitoken secret
   llama-cpp-compose-change.md  # server-side change to llama.cpp compose + revert
+  llama-cpp-responses-shim.md  # Responses-API compatibility proxy (deploy/remove)
+  shim/proxy.mjs               # pinned copy of the shim (MIT, upstream linked)
 docs/
   setup.md                     # step-by-step deployment and testing
   issues.md                    # issue log: symptoms, root cause, status, workaround

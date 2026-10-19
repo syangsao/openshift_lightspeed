@@ -195,6 +195,54 @@ Any non-kubeadmin user with console access works as well (the console supplies i
 
 ---
 
+## 7. “Danger alert: [LLM Backend] An error occurred during LLM invocation”
+
+**Symptom**
+
+The web console shows:
+
+```
+Danger alert:[LLM Backend] An error occurred during LLM invocation. Please contact your OpenShift Lightspeed administrator.
+```
+
+Intermittent; usually right after a tool ran successfully (observed after `pods_list`).
+
+**Evidence**
+
+App-server log:
+
+```
+HTTP Request: POST http://192.168.40.100:8022/v1/responses "HTTP/1.1 500 Internal Server Error"
+ERROR: LLM invocation failed: provider=local_llamacpp, model=qwen3.8-27b, elapsed=1.27s
+ERROR: Error code: 500 - {'error': {'code': 500, 'message': 'Failed to parse tool call arguments as JSON:
+  [json.exception.parse_error.101] parse error at line 1, column 1: attempting to parse an empty input;
+  check that your input string or stream contains the expected JSON', 'type': 'server_error'}}
+ERROR: Parsed LLM error (streaming): status_code=500, response_text=[LLM Backend] An error occurred during LLM invocation...
+```
+
+llama.cpp log shows three identical `srv operator(): got exception: {... "Failed to parse tool call arguments as JSON" ...}` (OLS retries).
+
+**Root cause**
+
+llama.cpp's Responses API strictly `json::parse()`es tool-call `arguments`. When the model emits a tool call with empty or truncated argument JSON (e.g. nothing, `{`, or a half-written string), the server aborts the request with HTTP 500 instead of treating it as a recoverable/client error. OLS surfaces the 500 as the generic “LLM invocation” alert.
+
+Because the bad tool call is appended to conversation history and replayed, a conversation that hits this can fail on every subsequent turn (“wedged”) until a new conversation is started.
+
+Upstream:
+- **ggml-org/llama.cpp#25510** — *“Malformed client-supplied tool call arguments return 500 instead of 4xx”* (open; explicitly describes the wedged-conversation behavior)
+- **ggml-org/llama.cpp#22072** — *“tool calling sometimes emits malformed/incomplete JSON arguments”* (closed stale; has multiple reporters, including truncation-mid-string failures)
+
+**Mitigations**
+
+1. **Start a new conversation** in the Lightspeed UI — the wedged one replays the malformed call.
+2. Retry — the failure is a sampling artifact (observed intermittently: identical requests succeeded 6/6 in a later capture run).
+3. Reduce malformed-JSON probability with a lower sampler temperature on the llama.cpp compose (the INSTRUCT row honours `TEMP`, default `0.7` — e.g. `TEMP=0.2`); this trades some response variety for tool-call stability.
+4. Permanent fix requires llama.cpp to treat empty/unparseable arguments as `{}` or return a 4xx (#25510) — not yet merged as of 2026-10.
+
+**Status:** Intermittent; understood. Not an OLS/RAG/safety failure — the LLM backend returned 500.
+
+---
+
 ## Observation: model quality
 
 Qwen3.8-27B handles tool selection well (docs search + `resources_list`), but one test run answered “5 nodes” and invented two worker names before settling on the correct 3-node answer on a retry. For production cluster interaction, verify tool outputs or increase sampling determinism; the model is good, not flawless.

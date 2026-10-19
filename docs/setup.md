@@ -1,6 +1,6 @@
 # Setup
 
-End-to-end deployment as executed against the `luque` cluster (OCP 4.22). Substitute your own endpoints/names.
+End-to-end deployment as executed against the `luke` cluster (OCP 4.22; 3 nodes — 1 arbiter + 2 control-plane/worker; not SNO). Substitute your own endpoints/names.
 
 ## Prerequisites
 
@@ -101,4 +101,4 @@ oc delete secret credentials -n openshift-lightspeed
 ## Sizing notes
 
 - OKP (Solr) requests **~75 GiB ephemeral storage**, 2 CPU / 2 GiB RAM by default; tunable via `spec.ols.deployment.rhokp`.
-- The full stack (Solr + postgres + app server + MCP + otel) ran comfortably on the reference 3-node cluster; on a single-node cluster the same deployment works but first-boot convergence is slower.
+- The full stack (Solr + postgres + app server + MCP + otel) ran comfortably on `luke` (3 nodes: arbiter + 2 control-plane/worker); first-boot convergence took ~5 minutes.

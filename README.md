@@ -1,10 +1,12 @@
 # OpenShift Lightspeed with a locally served LLM
 
-Deployment notes for **Red Hat OpenShift Lightspeed 1.0** on a small OpenShift (OCP 4.22) cluster, pointing at a **local llama.cpp server** instead of a cloud LLM provider. Includes verified configuration, the exact commands used, and every issue hit along the way (with root causes and upstream references).
+Deployment notes for **Red Hat OpenShift Lightspeed 1.0** on the `luke` OpenShift cluster, pointing at a **local llama.cpp server** instead of a cloud LLM provider. Includes verified configuration, the exact commands used, and every issue hit along the way (with root causes and upstream references).
 
 | Component | Detail |
 |---|---|
-| Cluster | `luque` — OCP 4.22, Kubernetes v1.35.6, RHCOS 9.8, 3 nodes |
+| Cluster | `luke` — OCP 4.22, Kubernetes v1.35.6, RHCOS 9.8 |
+| Topology | **3 nodes**: 1 arbiter (`192.168.40.25`) + 2 control-plane/worker (`192.168.40.26`, `.27`). This is **not** a single-node (SNO) cluster. |
+| API | `https://api.luke.syangsao.net:6443` |
 | Lightspeed | 1.0, operator installed via OLM (`openshift-lightspeed` namespace) |
 | LLM | llama.cpp (`ghcr.io/ggml-org/llama.cpp`, build 11669), `Qwen3.8-27B UD-IQ4_XS`, 262K ctx |
 | LLM endpoint | `http://192.168.40.100:8022/v1` (LAN host) |

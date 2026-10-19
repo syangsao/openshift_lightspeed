@@ -133,11 +133,11 @@ Killing  Container lightspeed-service-api failed liveness probe, will be restart
 
 **Root cause**
 
-Startup ordering: the app server blocks on Solr readiness before it opens its HTTPS listener, but the liveness probe starts firing earlier and kills the process. Solr's `portal-rag` core needs several minutes to load its index (startup probe allowance: ~20s initial + 34 × 10s ≈ 6 min). Single-node clusters take longer.
+Startup ordering: the app server blocks on Solr readiness before it opens its HTTPS listener, but the liveness probe starts firing earlier and kills the process. Solr's `portal-rag` core needs several minutes to load its index (startup probe allowance: ~20s initial + 34 × 10s ≈ 6 min).
 
 **Resolution**
 
-None needed — self-resolving. Wait for `lightspeed-rhokp` to become `1/1`; the app server then starts cleanly on the next restart. Observed ~10 minutes on a single-node cluster, ~5 minutes on the 3-node reference cluster.
+None needed — self-resolving. Wait for `lightspeed-rhokp` to become `1/1`; the app server then starts cleanly on the next restart. Observed ~5 minutes on `luke` (3 nodes: 1 arbiter + 2 control-plane/worker); slower nodes/bigger indexes extend it.
 
 ---
 

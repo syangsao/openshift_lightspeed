@@ -1,0 +1,26 @@
+apiVersion: ols.openshift.io/v1alpha1
+kind: OLSConfig
+metadata:
+  name: cluster
+spec:
+  llm:
+    providers:
+      - name: local_llamacpp
+        # llama.cpp serves an OpenAI-compatible API
+        type: openai
+        url: http://192.168.40.100:8022/v1
+        credentialsSecretRef:
+          name: credentials
+        models:
+          - name: qwen3.8-27b
+            # server is launched with -c 262144; keep well within that
+            contextWindowSize: 262144
+  ols:
+    defaultProvider: local_llamacpp
+    defaultModel: qwen3.8-27b
+    logLevel: INFO
+    # Local model answers the classifier prompt with prose instead of JSON,
+    # so the fail-closed guardrail blocks every tool call. See docs/issues.md #2.
+    guardrails:
+      toolResultInspection:
+        enabled: false

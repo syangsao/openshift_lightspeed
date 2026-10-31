@@ -46,6 +46,17 @@ flowchart LR
 
 ## Quick start
 
+The Lightspeed operator must be installed first — full procedure in
+[docs/setup.md](docs/setup.md#installing-the-operator):
+
+```bash
+oc create namespace openshift-lightspeed --dry-run=client -o yaml | oc apply -f -
+# + OperatorGroup + Subscription (package: lightspeed-operator, source: redhat-operators)
+oc get csv -n openshift-lightspeed -w   # Succeeded
+```
+
+Then the service configuration:
+
 ```bash
 # 1. Secret (placeholder token; llama.cpp needs no auth but the field is required)
 oc create -f manifests/secret.yaml

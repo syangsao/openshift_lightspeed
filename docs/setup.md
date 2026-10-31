@@ -11,6 +11,8 @@ End-to-end deployment as executed against the `luke` cluster (OCP 4.22; 3 nodes 
    # openshift-lightspeed   Succeeded
    ```
 
+   Install it first — see [Installing the operator](#installing-the-operator) below.
+
 2. **LLM endpoint** with an OpenAI-compatible API, reachable **from the cluster nodes** (pods in the default OVN network reach it via the host IP; `localhost` inside a pod is not the host):
 
    ```bash
@@ -20,6 +22,57 @@ End-to-end deployment as executed against the `luke` cluster (OCP 4.22; 3 nodes 
    ```
 
 3. For the reference setup: llama.cpp serving `qwen3.8-27b` on port `8022`, booted with **thinking disabled** (see [../manifests/llama-cpp-compose-change.md](../manifests/llama-cpp-compose-change.md) — required for tool calls, see issue #1).
+
+## Installing the operator
+
+The Lightspeed operator is available from the `redhat-operators` catalog (present
+on OCP 4.22; if your cluster's catalog predates it, the console OperatorHub search
+surfaces it from whichever catalog carries it — the Subscription below is what the
+GUI creates). The package name is **`lightspeed-operator`** (not
+`openshift-lightspeed` — a Subscription with that name fails with
+`ConstraintsNotSatisfiable: no operators found in package ...`).
+
+```bash
+oc create namespace openshift-lightspeed --dry-run=client -o yaml | oc apply -f -
+
+cat <<'EOF' | oc apply -f -
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: openshift-lightspeed-group
+  namespace: openshift-lightspeed
+spec:
+  targetNamespaces:
+    - openshift-lightspeed
+EOF
+
+cat <<'EOF' | oc apply -f -
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: lightspeed-operator
+  namespace: openshift-lightspeed
+spec:
+  channel: stable
+  installPlanApproval: Automatic
+  name: lightspeed-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+  startingCSV: lightspeed-operator.v2.0.0
+EOF
+
+# wait for the CSV to be Succeeded
+oc get csv -n openshift-lightspeed -w
+```
+
+> **Version note (observed on luke, 2026-10-31):** the current stable channel
+> serves **`lightspeed-operator.v2.0.0`** (it installed v2.0.0 directly; the
+> previous CSV in the catalog was `v1.1.5`). The operator deploys two controller
+> managers — `lightspeed-operator-controller-manager` and
+> `lightspeed-agentic-operator-controller-manager` — and registers both the 1.x
+> `olsconfigs.ols.openshift.io/v1alpha1` CRD (used by
+> [`../manifests/olsconfig.yaml`](../manifests/olsconfig.yaml)) and the 2.x
+> `agentic.*` API group. The manifests in this repo work unmodified against v2.0.0.
 
 ## Deploy
 
@@ -35,19 +88,20 @@ oc create -f manifests/olsconfig.yaml
 oc get pods -n openshift-lightspeed -w
 ```
 
-Expected pods once settled:
+Expected pods once settled (observed with operator v2.0.0 on luke, 2026-10-31):
 
 ```
 lightspeed-app-server-...        2/2   Running   # lightspeed-service-api + to-dataverse exporter
 lightspeed-console-plugin-...    1/1   Running
 lightspeed-operator-controller-manager-...  1/1   Running
-lightspeed-otel-collector-...    1/1   Running
+lightspeed-agentic-operator-controller-manager-...  1/1   Running   # new in v2.0.0
+lightspeed-otel-collector-...    2/2   Running
 lightspeed-postgres-server-...   1/1   Running
 lightspeed-rhokp-...             1/1   Running   # Solr / offline knowledge portal (OKP)
 openshift-mcp-server-...         1/1   Running   # cluster interaction tools
 ```
 
-**First boot is slow.** The app server waits for Solr on startup and restarts until `lightspeed-rhokp` is ready (~5–15 min depending on node speed). It resolves itself; see issue #3.
+**First boot is slow.** The app server waits for Solr on startup and restarts until `lightspeed-rhokp` is ready (~5–15 min depending on node speed). It resolves itself; see issue #3. On luke (2026-10-31) the full stack converged in ~8 minutes: rhokp/Solr needed ~7 min for its startup probe, after which the app server came up ready on its next restart.
 
 ## Configuration notes
 

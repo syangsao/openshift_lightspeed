@@ -197,6 +197,7 @@ Any non-kubeadmin user with console access works as well (the console supplies i
 
 ## 6. Notes from the documentation that are easy to miss
 
+- The OLM package name is **`lightspeed-operator`**, not `openshift-lightspeed`. A Subscription named after the namespace fails resolution with `ConstraintsNotSatisfiable: no operators found in package openshift-lightspeed` — the console OperatorHub search masks this because it matches on display name. See [setup.md — Installing the operator](setup.md#installing-the-operator).
 - The published 1.0 configuration guide only shows cloud providers; **`openai` type is the generic OpenAI-compatible client** and works with llama.cpp. The provider URL must end with `/v1`.
 - The service API endpoint in 1.0 is **`/v1/query`**, not `/v1/chat` (2.x-era examples are stale).
 - Cluster interaction (MCP) is **on by default** in 1.0 — the `introspectionEnabled` patch from the 2025 developer article applies to 2.x technology preview.
